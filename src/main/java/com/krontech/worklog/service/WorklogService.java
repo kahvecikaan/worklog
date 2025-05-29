@@ -83,6 +83,17 @@ public class WorklogService {
             throw new RuntimeException("Worklog older than 7 days cannot be edited");
         }
 
+        // Update all fields including date and type
+        if (request.getWorkDate() != null) {
+            worklog.setWorkDate(request.getWorkDate());
+        }
+
+        if (request.getWorklogTypeId() != null) {
+            WorklogType worklogType = worklogTypeRepository.findById(request.getWorklogTypeId())
+                    .orElseThrow(() -> new RuntimeException("Invalid worklog type"));
+            worklog.setWorklogType(worklogType);
+        }
+
         worklog.setHoursWorked(request.getHoursWorked());
         worklog.setDescription(request.getDescription());
         worklog.setProjectName(request.getProjectName());
