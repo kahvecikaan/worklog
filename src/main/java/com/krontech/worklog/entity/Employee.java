@@ -117,6 +117,10 @@ public class Employee {
         return this.role == Role.DIRECTOR && this.directedDepartment != null;
     }
 
+    public boolean isTeamLead() {
+        return this.role == Role.TEAM_LEAD;
+    }
+
     // Get all employees this person can view
     public List<Employee> getViewableEmployees() {
         List<Employee> viewable = new ArrayList<>();

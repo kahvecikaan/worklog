@@ -44,6 +44,13 @@ public class WorklogController {
         return ResponseEntity.ok(worklogService.getEmployeeWorklogs(currentUserId, startDate, endDate));
     }
 
+    @GetMapping("/{id}")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<WorklogResponse> getWorklogById(@PathVariable Integer id) {
+        Integer currentUserId = SecurityUtils.getCurrentUserId();
+        return ResponseEntity.ok(worklogService.getWorklogById(id, currentUserId));
+    }
+
     // Get worklogs for a specific date
     @GetMapping("/my/date/{date}")
     @PreAuthorize("isAuthenticated()")

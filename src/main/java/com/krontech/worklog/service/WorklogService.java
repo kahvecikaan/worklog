@@ -109,6 +109,35 @@ public class WorklogService {
         worklogRepository.delete(worklog);
     }
 
+    @Transactional(readOnly = true)
+    public WorklogResponse getWorklogById(Integer worklogId, Integer requesterId) {
+
+        Worklog worklog = worklogRepository.findById(worklogId)
+                .orElseThrow(() -> new RuntimeException("Worklog not found"));
+
+        Employee requester = employeeRepository.findById(requesterId)
+                .orElseThrow(() -> new RuntimeException("Requester not found"));
+
+        // 1. Owner can always view
+        if (worklog.getEmployee().getId().equals(requesterId)) {
+            return WorklogResponse.from(worklog);
+        }
+
+        // 2. Team-lead can view direct reports
+        if (requester.isTeamLead() && requester.canViewEmployee(worklog.getEmployee())) {
+            return WorklogResponse.from(worklog);
+        }
+
+        // 3. Director can view anyone in their department
+        if (requester.isDirector()
+                && requester.getDepartment().equals(worklog.getEmployee().getDepartment())) {
+            return WorklogResponse.from(worklog);
+        }
+
+        // Otherwise → forbidden
+        throw new RuntimeException("You don’t have permission to view this worklog");
+    }
+
     public List<WorklogResponse> getEmployeeWorklogs(Integer employeeId, LocalDate startDate, LocalDate endDate) {
         List<Worklog> worklogs = worklogRepository.findByEmployeeIdAndWorkDateBetweenOrderByWorkDateDesc(
                 employeeId, startDate, endDate
