@@ -8,18 +8,11 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "worklogs",
-        uniqueConstraints = {
-                @UniqueConstraint(
-                        name = "uk_employee_date_type",
-                        columnNames = {"employee_id", "work_date", "worklog_type_id"} // Prevent duplicates
-                )
-        }
-)
+@Table(name = "worklogs")
 @Data
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder // Lombok: generates builder pattern
+@Builder
 @EqualsAndHashCode(exclude = {"employee", "worklogType"})
 @ToString(exclude = {"employee", "worklogType"})
 public class Worklog {
@@ -28,7 +21,7 @@ public class Worklog {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Integer id;
 
-    @ManyToOne(fetch = FetchType.LAZY, optional = false) // optional=false means NOT NULL
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "employee_id", nullable = false)
     private Employee employee;
 
@@ -44,7 +37,7 @@ public class Worklog {
     @Max(value = 8, message = "Maximum hours is 8")
     private Integer hoursWorked;
 
-    @Column(columnDefinition = "TEXT") // For PostgreSQL TEXT type
+    @Column(columnDefinition = "TEXT")
     private String description;
 
     @Column(name = "project_name", length = 200)
@@ -67,7 +60,6 @@ public class Worklog {
         updatedAt = LocalDateTime.now();
     }
 
-    // Helper method to convert hours to days
     public double getWorkDays() {
         return hoursWorked / 8.0;
     }
