@@ -52,21 +52,7 @@ public class AuthController {
                     securityContext
             );
 
-            // Get user details
-            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-
-            // Build response
-            LoginResponse response = LoginResponse.builder()
-                    .id(userDetails.employee().getId())
-                    .email(userDetails.employee().getEmail())
-                    .firstName(userDetails.employee().getFirstName())
-                    .lastName(userDetails.employee().getLastName())
-                    .role(userDetails.employee().getRole().name())
-                    .departmentId(userDetails.employee().getDepartment().getId())
-                    .departmentName(userDetails.employee().getDepartment().getName())
-                    .build();
-
-            return ResponseEntity.ok(response);
+            return ResponseEntity.ok(buildLoginResponse(authentication));
 
         } catch (BadCredentialsException e) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
@@ -85,9 +71,13 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
+        return ResponseEntity.ok(buildLoginResponse(authentication));
+    }
+
+    private LoginResponse buildLoginResponse(Authentication authentication) {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
 
-        LoginResponse response = LoginResponse.builder()
+        return LoginResponse.builder()
                 .id(userDetails.employee().getId())
                 .email(userDetails.employee().getEmail())
                 .firstName(userDetails.employee().getFirstName())
@@ -96,7 +86,5 @@ public class AuthController {
                 .departmentId(userDetails.employee().getDepartment().getId())
                 .departmentName(userDetails.employee().getDepartment().getName())
                 .build();
-
-        return ResponseEntity.ok(response);
     }
 }
