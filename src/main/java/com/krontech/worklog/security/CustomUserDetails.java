@@ -32,18 +32,8 @@ public record CustomUserDetails(Employee employee) implements UserDetails {
     }
 
     @Override
-    public boolean isAccountNonExpired() {
-        return true;
-    }
-
-    @Override
     public boolean isAccountNonLocked() {
         return employee.getIsActive();
-    }
-
-    @Override
-    public boolean isCredentialsNonExpired() {
-        return true;
     }
 
     @Override
@@ -53,9 +43,5 @@ public record CustomUserDetails(Employee employee) implements UserDetails {
 
     public Integer getId() {
         return employee.getId();
-    }
-
-    public String getFullName() {
-        return employee.getFullName();
     }
 }

@@ -119,7 +119,6 @@ public class SecurityConfig {
         DefaultCookieSerializer serializer = new DefaultCookieSerializer();
         serializer.setCookieName("JSESSIONID");
         serializer.setCookiePath("/");
-        serializer.setDomainNamePattern("^.+?\\.(\\w+\\.[a-z]+)$");
         serializer.setSameSite("Lax");
         serializer.setUseHttpOnlyCookie(true);
         serializer.setUseSecureCookie(false);
