@@ -60,19 +60,34 @@ public interface WorklogRepository extends JpaRepository<Worklog, Integer> {
                                    @Param("startDate") LocalDate startDate,
                                    @Param("endDate") LocalDate endDate);
 
-    // Team Lead Dashboard - Summary by team member
+    // Team Lead Dashboard - Summary by team member (includes all team members)
+    // This now starts from Employee and LEFT JOINs Worklog to include members with no logs
     @Query("""
-        SELECT e.id, e.firstName, e.lastName, SUM(w.hoursWorked), COUNT(DISTINCT w.workDate)
-        FROM Worklog w
-        JOIN w.employee e
+        SELECT
+            e.id,
+            e.firstName,
+            e.lastName,
+            COALESCE(SUM(w.hoursWorked), 0) as totalHours,
+            COUNT(DISTINCT w.workDate) as daysWorked
+        FROM Employee e
+        LEFT JOIN e.worklogs w ON w.workDate BETWEEN :startDate AND :endDate
         WHERE e.teamLead.id = :teamLeadId
-        AND w.workDate BETWEEN :startDate AND :endDate
+        AND e.isActive = true
         GROUP BY e.id, e.firstName, e.lastName
         ORDER BY e.firstName
     """)
     List<Object[]> getTeamSummary(@Param("teamLeadId") Integer teamLeadId,
                                   @Param("startDate") LocalDate startDate,
                                   @Param("endDate") LocalDate endDate);
+
+    // Get all team members for a team lead
+    @Query("""
+        SELECT COUNT(e)
+        FROM Employee e
+        WHERE e.teamLead.id = :teamLeadId
+        AND e.isActive = true
+    """)
+    Long getActiveTeamMemberCount(@Param("teamLeadId") Integer teamLeadId);
 
     // Director Dashboard - Department-wide worklogs
     @Query("""
@@ -150,4 +165,32 @@ public interface WorklogRepository extends JpaRepository<Worklog, Integer> {
     @Query("SELECT CASE WHEN COUNT(w) > 0 THEN true ELSE false END FROM Worklog w WHERE w.employee.id = :employeeId AND w.workDate = :workDate")
     boolean existsByEmployeeIdAndWorkDate(@Param("employeeId") Integer employeeId,
                                           @Param("workDate") LocalDate workDate);
+
+    @Query("""
+    SELECT w FROM Worklog w
+    WHERE w.employee.id = :employeeId
+    AND w.workDate = :workDate
+    AND w.worklogType.id = :typeId
+    AND (:projectName IS NULL AND w.projectName IS NULL OR w.projectName = :projectName)
+    AND (:description IS NULL AND w.description IS NULL OR w.description = :description)
+""")
+    Optional<Worklog> findDuplicate(
+            @Param("employeeId") Integer employeeId,
+            @Param("workDate") LocalDate workDate,
+            @Param("typeId") Integer typeId,
+            @Param("projectName") String projectName,
+            @Param("description") String description
+    );
+
+
+    @Query("""
+    SELECT w FROM Worklog w
+    WHERE w.employee.id = :employeeId
+    AND w.workDate = :workDate
+    ORDER BY w.createdAt
+""")
+    List<Worklog> findAllByEmployeeAndDate(
+            @Param("employeeId") Integer employeeId,
+            @Param("workDate") LocalDate workDate
+    );
 }
