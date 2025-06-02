@@ -138,13 +138,14 @@ public class DashboardService {
         LocalDate startDate = filters.getStartDate();
         LocalDate endDate = filters.getEndDate();
 
-        // Get team members summary
+        // Get team members summary (now includes ALL active team members)
         List<Object[]> teamSummaryData = worklogRepository.getTeamSummary(
                 teamLead.getId(), startDate, endDate
         );
 
         List<TeamMemberSummary> teamMembers = new ArrayList<>();
         int totalTeamHours = 0;
+        int membersWithLogs = 0;
 
         // Calculate working days for utilization
         long workingDays = calculateWorkingDays(startDate, endDate);
@@ -158,6 +159,11 @@ public class DashboardService {
 
             Employee member = employeeRepository.findById(memberId).orElse(null);
             if (member == null) continue;
+
+            // Track members who actually logged work
+            if (totalHours > 0) {
+                membersWithLogs++;
+            }
 
             double utilizationRate = (workingDays > 0) ?
                     (totalHours * 100.0) / (workingDays * 8) : 0.0;
@@ -188,6 +194,9 @@ public class DashboardService {
                     .averageHoursPerMember(avgHoursPerMember)
                     .teamUtilizationRate(teamUtilization)
                     .build());
+
+            log.info("Team lead dashboard - Team size: {}, Members with logs: {}, Total hours: {}, Utilization: {}%",
+                    teamMembers.size(), membersWithLogs, totalTeamHours, teamUtilization);
         }
     }
 
@@ -206,12 +215,17 @@ public class DashboardService {
                 .filter(e -> e.getRole() == Role.TEAM_LEAD)
                 .toList();
 
-        // Build team leads summary
+        // Build team leads summary with enhanced metrics
         List<TeamLeadSummary> teamLeadSummaries = new ArrayList<>();
         int departmentTotalHours = 0;
         long workingDays = calculateWorkingDays(startDate, endDate);
 
-        // FIXED: Include ALL employees in department hours calculation
+        // Track best and worst performing teams
+        TeamLeadSummary bestPerformingTeam = null;
+        TeamLeadSummary worstPerformingTeam = null;
+        double highestUtilization = 0;
+        double lowestUtilization = 100;
+
         for (Employee teamLead : teamLeads) {
             // Get team lead's own hours first
             Integer teamLeadHours = worklogRepository.getTotalHoursByEmployee(
@@ -219,16 +233,20 @@ public class DashboardService {
             );
             if (teamLeadHours == null) teamLeadHours = 0;
 
-            // Get team members' data
+            // Get team members' data using the improved query
             List<Object[]> teamData = worklogRepository.getTeamSummary(
                     teamLead.getId(), startDate, endDate
             );
 
             int teamSize = teamData.size();
             int teamMembersHours = 0;
+            int teamMembersWithLogs = 0;
 
             for (Object[] row : teamData) {
                 Long hours = (Long) row[3];
+                if (hours > 0) {
+                    teamMembersWithLogs++;
+                }
                 teamMembersHours += hours.intValue();
             }
 
@@ -239,13 +257,26 @@ public class DashboardService {
             double teamUtilization = (workingDays > 0 && (teamSize + 1) > 0) ?
                     (totalTeamHours * 100.0) / ((teamSize + 1) * workingDays * 8) : 0.0;
 
-            teamLeadSummaries.add(TeamLeadSummary.builder()
+            TeamLeadSummary summary = TeamLeadSummary.builder()
                     .id(teamLead.getId())
                     .name(teamLead.getFullName())
                     .teamSize(teamSize) // Just team members count
                     .teamTotalHours(totalTeamHours) // Includes team lead
                     .teamUtilizationRate(teamUtilization)
-                    .build());
+                    .teamMembersWithLogs(teamMembersWithLogs) // New field
+                    .build();
+
+            teamLeadSummaries.add(summary);
+
+            // Track best and worst performing teams
+            if (teamUtilization > highestUtilization) {
+                highestUtilization = teamUtilization;
+                bestPerformingTeam = summary;
+            }
+            if (teamUtilization < lowestUtilization) {
+                lowestUtilization = teamUtilization;
+                worstPerformingTeam = summary;
+            }
 
             departmentTotalHours += totalTeamHours;
         }
@@ -257,7 +288,7 @@ public class DashboardService {
         if (directorHours == null) directorHours = 0;
         departmentTotalHours += directorHours;
 
-        // FIXED: Add hours from employees who report directly to director (if any)
+        // Add hours from employees who report directly to director (if any)
         List<Employee> directReports = departmentEmployees.stream()
                 .filter(e -> e.getRole() == Role.EMPLOYEE &&
                         (e.getTeamLead() == null || e.getTeamLead().getId().equals(director.getId())))
@@ -274,13 +305,26 @@ public class DashboardService {
 
         responseBuilder.teamLeads(teamLeadSummaries);
 
+        // Add team performance insights
+        if (bestPerformingTeam != null && worstPerformingTeam != null) {
+            responseBuilder.teamPerformanceInsights(TeamPerformanceInsights.builder()
+                    .bestPerformingTeamId(bestPerformingTeam.getId())
+                    .bestPerformingTeamName(bestPerformingTeam.getName())
+                    .bestPerformingTeamUtilization(bestPerformingTeam.getTeamUtilizationRate())
+                    .worstPerformingTeamId(worstPerformingTeam.getId())
+                    .worstPerformingTeamName(worstPerformingTeam.getName())
+                    .worstPerformingTeamUtilization(worstPerformingTeam.getTeamUtilizationRate())
+                    .utilizationGap(highestUtilization - lowestUtilization)
+                    .build());
+        }
+
         // Get department-wide worklog type breakdown
         List<Object[]> deptTypeBreakdown = worklogRepository.getDepartmentWorklogTypeSummary(
                 departmentId, startDate, endDate
         );
 
         List<WorklogTypeBreakdown> deptBreakdowns = new ArrayList<>();
-        int actualDeptTotal = 0; // Recalculate from actual data
+        int actualDeptTotal = 0;
 
         for (Object[] row : deptTypeBreakdown) {
             String typeName = (String) row[0];
@@ -308,20 +352,38 @@ public class DashboardService {
             responseBuilder.worklogTypeBreakdown(deptBreakdowns);
         }
 
-        // Calculate department statistics
+        // Calculate department statistics with enhanced metrics
         int totalEmployees = departmentEmployees.size() - 1; // Exclude director
         double deptUtilization = (workingDays > 0 && totalEmployees > 0) ?
                 (departmentTotalHours * 100.0) / (totalEmployees * workingDays * 8) : 0.0;
 
+        // Count employees who have logged work
+        int employeesWithLogs = 0;
+        for (Employee emp : departmentEmployees) {
+            if (!emp.getId().equals(director.getId())) {
+                Integer empHours = worklogRepository.getTotalHoursByEmployee(
+                        emp.getId(), startDate, endDate
+                );
+                if (empHours != null && empHours > 0) {
+                    employeesWithLogs++;
+                }
+            }
+        }
+
+        double logComplianceRate = (totalEmployees > 0) ?
+                (employeesWithLogs * 100.0 / totalEmployees) : 0.0;
         responseBuilder.departmentStats(DepartmentStatistics.builder()
                 .totalEmployees(totalEmployees)
                 .totalTeamLeads(teamLeads.size())
                 .departmentTotalHours(departmentTotalHours)
                 .departmentUtilizationRate(deptUtilization)
+                .employeesWithLogs(employeesWithLogs)
+                .logComplianceRate(logComplianceRate)
                 .build());
 
-        log.info("Director dashboard - Department total hours: {}, Total employees: {}, Utilization: {}%",
-                departmentTotalHours, totalEmployees, deptUtilization);
+        log.info("Director dashboard - Department total hours: {}, Total employees: {}, Utilization: {}%, Compliance: {}%",
+                departmentTotalHours, totalEmployees, deptUtilization,
+                logComplianceRate);
     }
 
     // Helper methods

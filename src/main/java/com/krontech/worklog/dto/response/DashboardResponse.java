@@ -25,6 +25,7 @@ public class DashboardResponse {
     // For directors only
     private List<TeamLeadSummary> teamLeads;
     private DepartmentStatistics departmentStats;
+    private TeamPerformanceInsights teamPerformanceInsights;
 
     @Data
     @Builder
@@ -91,6 +92,7 @@ public class DashboardResponse {
         private Integer teamSize;
         private Integer teamTotalHours;
         private Double teamUtilizationRate;
+        private Integer teamMembersWithLogs;
     }
 
     @Data
@@ -100,5 +102,21 @@ public class DashboardResponse {
         private Integer totalTeamLeads;
         private Integer departmentTotalHours;
         private Double departmentUtilizationRate;
+        private Integer employeesWithLogs;
+        private Double logComplianceRate; // Percentage of employees who logged work
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TeamPerformanceInsights {
+        private Integer bestPerformingTeamId;
+        private String bestPerformingTeamName;
+        private Double bestPerformingTeamUtilization;
+        private Integer worstPerformingTeamId;
+        private String worstPerformingTeamName;
+        private Double worstPerformingTeamUtilization;
+        private Double utilizationGap; // Difference between best and worst
     }
 }
