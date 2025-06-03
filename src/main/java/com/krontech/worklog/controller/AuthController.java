@@ -4,7 +4,7 @@ import com.krontech.worklog.dto.request.LoginRequest;
 import com.krontech.worklog.dto.response.LoginResponse;
 import com.krontech.worklog.security.CustomUserDetails;
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,6 +16,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -25,9 +26,13 @@ public class AuthController {
 
     private final AuthenticationManager authenticationManager;
 
+    private final SecurityContextRepository securityContextRepository =
+            new HttpSessionSecurityContextRepository();
+
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest loginRequest,
-                                   HttpServletRequest request) {
+                                   HttpServletRequest request,
+                                   HttpServletResponse response) {
         try {
             // Create authentication token
             UsernamePasswordAuthenticationToken authToken =
@@ -39,18 +44,13 @@ public class AuthController {
             // Authenticate
             Authentication authentication = authenticationManager.authenticate(authToken);
 
-            // Create new session
-            HttpSession session = request.getSession(true);
+            // Create and save context
+            SecurityContext context = SecurityContextHolder.createEmptyContext();
+            context.setAuthentication(authentication);
+            SecurityContextHolder.setContext(context);
 
-            // Set authentication in SecurityContext
-            SecurityContext securityContext = SecurityContextHolder.getContext();
-            securityContext.setAuthentication(authentication);
-
-            // Save SecurityContext to session
-            session.setAttribute(
-                    HttpSessionSecurityContextRepository.SPRING_SECURITY_CONTEXT_KEY,
-                    securityContext
-            );
+            // This handles session creation and all the details
+            securityContextRepository.saveContext(context, request, response);
 
             return ResponseEntity.ok(buildLoginResponse(authentication));
 
