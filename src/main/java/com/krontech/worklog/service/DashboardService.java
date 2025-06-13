@@ -477,7 +477,7 @@ public class DashboardService {
             stats.put("teamMembersLoggedToday", loggedToday);
 
         } else if (employee.getRole() == Role.DIRECTOR) {
-            // FIXED: Director sees all department members (excluding self)
+            // Director sees all department members (excluding self)
             List<Employee> departmentEmployees = employeeRepository.findByDepartmentIdAndIsActiveTrue(
                     employee.getDepartment().getId()
             );
@@ -496,14 +496,10 @@ public class DashboardService {
             }
             stats.put("teamMembersLoggedToday", loggedToday);
 
-        } else {
-            // Regular employee
-            stats.put("teamSize", 0);
-            stats.put("teamMembersLoggedToday", 0);
         }
 
-        log.info("Quick stats for {} ({}): todayHours={}, weekHours={}, teamSize={}",
-                employee.getFullName(), employee.getRole(), todayHours, weekHours, stats.get("teamSize"));
+        log.info("Quick stats for {} ({})",
+                employee.getFullName(), employee.getRole());
 
         return stats;
     }
