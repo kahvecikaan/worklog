@@ -17,13 +17,4 @@ public class SecurityUtils {
         CustomUserDetails user = getCurrentUser();
         return user != null ? user.getId() : null;
     }
-
-    public static boolean hasRole(String role) {
-        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
-        if (authentication != null) {
-            return authentication.getAuthorities().stream()
-                    .anyMatch(auth -> auth.getAuthority().equals("ROLE_" + role));
-        }
-        return false;
-    }
 }
