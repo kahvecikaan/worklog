@@ -37,8 +37,7 @@ public class DepartmentController {
     @PreAuthorize("hasRole('DIRECTOR')")
     public ResponseEntity<?> getDepartment(@PathVariable Integer id) {
         log.info("Getting department: {}", id);
-        Integer currentUserId = SecurityUtils.getCurrentUserId();
-        return ResponseEntity.ok(departmentService.getDepartmentDetails(id, currentUserId));
+        return ResponseEntity.ok(departmentService.getDepartmentDetails(id));
     }
 
     /**
