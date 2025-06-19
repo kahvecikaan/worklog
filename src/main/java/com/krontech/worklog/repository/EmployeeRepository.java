@@ -1,5 +1,6 @@
 package com.krontech.worklog.repository;
 
+import com.krontech.worklog.dto.projection.EmployeeHierarchyProjection;
 import com.krontech.worklog.entity.Employee;
 import com.krontech.worklog.entity.Role;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -40,7 +41,7 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
     // Get all employees visible to a specific user (for dropdowns in dashboard)
     @Query("""
-        SELECT DISTINCT e FROM Employee e
+    SELECT DISTINCT e FROM Employee e
         WHERE e.isActive = true AND (
             e.id = :userId OR
             (e.teamLead.id = :userId) OR
@@ -54,19 +55,26 @@ public interface EmployeeRepository extends JpaRepository<Employee, Integer> {
 
     // Get employee hierarchy for department
     @Query("""
-    SELECT e FROM Employee e
-    LEFT JOIN FETCH e.teamLead
-    LEFT JOIN FETCH e.grade
+    SELECT e.id as id,
+           e.firstName as firstName,
+           e.lastName as lastName,
+           e.email as email,
+           e.role as role,
+           e.grade as grade,
+           e.teamLead as teamLead
+    FROM Employee e
+    LEFT JOIN e.teamLead tl
+    LEFT JOIN e.grade g
     WHERE e.department.id = :deptId AND e.isActive = true
     ORDER BY
         CASE
             WHEN e.role = com.krontech.worklog.entity.Role.DIRECTOR THEN 1
             WHEN e.role = com.krontech.worklog.entity.Role.TEAM_LEAD THEN 2
-            ELSE 3
+            WHEN e.role = com.krontech.worklog.entity.Role.EMPLOYEE THEN 3
         END,
         e.firstName
     """)
-    List<Employee> findDepartmentHierarchy(@Param("deptId") Integer departmentId);
+    List<EmployeeHierarchyProjection> findDepartmentHierarchy(@Param("deptId") Integer departmentId);
 
     Long countByDepartmentIdAndIsActiveTrue(Integer departmentId);
 
