@@ -1,5 +1,8 @@
 package com.krontech.worklog.service;
 
+import com.krontech.worklog.dto.projection.DepartmentWithCountProjection;
+import com.krontech.worklog.dto.projection.EmployeeHierarchyProjection;
+import com.krontech.worklog.dto.response.*;
 import com.krontech.worklog.entity.Department;
 import com.krontech.worklog.entity.Employee;
 import com.krontech.worklog.entity.Role;
@@ -10,9 +13,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -22,129 +24,118 @@ public class DepartmentService {
     private final DepartmentRepository departmentRepository;
     private final EmployeeRepository employeeRepository;
 
-    public List<Map<String, Object>> getAllDepartmentsWithStats() {
-        List<Object[]> departmentsWithCounts = departmentRepository.findAllWithEmployeeCount();
-        List<Map<String, Object>> result = new ArrayList<>();
+    public List<DepartmentSummaryResponse> getAllDepartmentsWithStats() {
+        List<DepartmentWithCountProjection> departmentsWithCounts =
+                departmentRepository.findAllWithEmployeeCount();
 
-        for (Object[] row : departmentsWithCounts) {
-            Department dept = (Department) row[0];
-            Long employeeCount = (Long) row[1];
+        return departmentsWithCounts.stream()
+                .map(dept -> DepartmentSummaryResponse.builder()
+                        .id(dept.getId())
+                        .name(dept.getName())
+                        .code(dept.getCode())
+                        .directorId(dept.getDirectorId())
+                        .directorName(dept.getDirectorName())
+                        .employeeCount(dept.getEmployeeCount())
+                        .build())
+                .collect(Collectors.toList());
 
-            Map<String, Object> deptInfo = new HashMap<>();
-            deptInfo.put("id", dept.getId());
-            deptInfo.put("name", dept.getName());
-            deptInfo.put("code", dept.getCode());
-            deptInfo.put("directorId", dept.getDirector() != null ? dept.getDirector().getId() : null);
-            deptInfo.put("directorName", dept.getDirector() != null ? dept.getDirector().getFullName() : null);
-            deptInfo.put("employeeCount", employeeCount);
-
-            result.add(deptInfo);
-        }
-
-        return result;
     }
 
-    public Map<String, Object> getDepartmentHierarchy(Integer departmentId) {
+    public DepartmentHierarchyResponse getDepartmentHierarchy(Integer departmentId) {
         Department department = departmentRepository.findByIdWithDirector(departmentId)
                 .orElseThrow(() -> new RuntimeException("Department not found"));
 
-        List<Employee> employees = employeeRepository.findDepartmentHierarchy(departmentId);
+        List<EmployeeHierarchyProjection> employees = employeeRepository.findDepartmentHierarchy(departmentId);
 
-        Map<String, Object> hierarchy = new HashMap<>();
-        hierarchy.put("department", department.getName());
-        hierarchy.put("departmentCode", department.getCode());
+        DepartmentHierarchyResponse.DepartmentHierarchyResponseBuilder responseBuilder =
+                DepartmentHierarchyResponse.builder()
+                        .department(department.getName())
+                        .departmentCode(department.getCode());
 
         // Director
-        Employee director = employees.stream()
-                .filter(e -> e.getRole().name().equals("DIRECTOR"))
+        EmployeeHierarchyProjection director = employees.stream()
+                .filter(e -> e.getRole() == Role.DIRECTOR)
                 .findFirst()
                 .orElse(null);
 
         if (director != null) {
-            Map<String, Object> directorInfo = new HashMap<>();
-            directorInfo.put("id", director.getId());
-            directorInfo.put("name", director.getFullName());
-            directorInfo.put("email", director.getEmail());
-            hierarchy.put("director", directorInfo);
+            responseBuilder.director(DepartmentHierarchyResponse.DirectorInfo.builder()
+                    .id(director.getId())
+                    .name(director.getFirstName() + " " + director.getLastName())
+                    .email(director.getEmail())
+                    .build());
         }
 
-        // Team Leads with their teams
-        List<Map<String, Object>> teams = new ArrayList<>();
-        List<Employee> teamLeads = employees.stream()
-                .filter(e -> e.getRole().name().equals("TEAM_LEAD"))
+        // Team leads with their teams
+        List<EmployeeHierarchyProjection> teamLeads = employees.stream()
+                .filter(e -> e.getRole() == Role.TEAM_LEAD)
                 .toList();
 
-        for (Employee teamLead : teamLeads) {
-            Map<String, Object> teamInfo = new HashMap<>();
-            teamInfo.put("teamLeadId", teamLead.getId());
-            teamInfo.put("teamLeadName", teamLead.getFullName());
-            teamInfo.put("teamLeadEmail", teamLead.getEmail());
+        List<DepartmentHierarchyResponse.TeamInfo> teams = new ArrayList<>();
 
+        for(EmployeeHierarchyProjection lead : teamLeads) {
             // Get team members
-            List<Map<String, Object>> members = new ArrayList<>();
-            employees.stream()
-                    .filter(e -> e.getTeamLead() != null && e.getTeamLead().getId().equals(teamLead.getId()))
-                    .forEach(member -> {
-                        Map<String, Object> memberInfo = new HashMap<>();
-                        memberInfo.put("id", member.getId());
-                        memberInfo.put("name", member.getFullName());
-                        memberInfo.put("email", member.getEmail());
-                        memberInfo.put("grade", member.getGrade().getTitle());
-                        members.add(memberInfo);
-                    });
+            List<DepartmentHierarchyResponse.TeamMemberInfo> members = employees.stream()
+                    .filter(e -> e.getTeamLead() != null && e.getTeamLead().getId().equals(lead.getId()))
+                    .map(member -> DepartmentHierarchyResponse.TeamMemberInfo.builder()
+                            .id(member.getId())
+                            .name(member.getFirstName() + " " + member.getLastName())
+                            .email(member.getEmail())
+                            .grade(member.getGrade().getTitle())
+                            .build())
+                    .toList();
 
-            teamInfo.put("members", members);
-            teamInfo.put("teamSize", members.size());
-            teams.add(teamInfo);
+            teams.add(DepartmentHierarchyResponse.TeamInfo.builder()
+                    .teamLeadId(lead.getId())
+                    .teamLeadName(lead.getFirstName() + " " + lead.getLastName())
+                    .teamLeadEmail(lead.getEmail())
+                    .members(members)
+                    .teamSize(members.size())
+                    .build());
         }
 
-        hierarchy.put("teams", teams);
-        hierarchy.put("totalEmployees", employees.size() - 1); // Exclude director
-        hierarchy.put("totalTeamLeads", teamLeads.size());
+        responseBuilder.teams(teams);
+        responseBuilder.totalEmployees(employees.size());
+        responseBuilder.totalTeamLeads(teamLeads.size());
 
-        return hierarchy;
+        return responseBuilder.build();
     }
 
-    public Map<String, Object> getDepartmentDetails(Integer departmentId, Integer currentUserId) {
-        Employee currentUser = employeeRepository.findById(currentUserId)
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
+    public DepartmentDetailsResponse getDepartmentDetails(Integer departmentId) {
         Department department = departmentRepository.findByIdWithDirector(departmentId)
                 .orElseThrow(() -> new RuntimeException("Department not found"));
 
-        Map<String, Object> details = new HashMap<>();
-        details.put("id", department.getId());
-        details.put("name", department.getName());
-        details.put("code", department.getCode());
-        details.put("directorId", department.getDirector() != null ? department.getDirector().getId() : null);
-        details.put("directorName", department.getDirector() != null ? department.getDirector().getFullName() : null);
-
         // Get employee count
         long employeeCount = employeeRepository.countByDepartmentIdAndIsActiveTrue(departmentId);
-        details.put("employeeCount", employeeCount);
 
         // Get team lead count
         long teamLeadCount = employeeRepository.countByDepartmentIdAndRoleAndIsActiveTrue(
                 departmentId, Role.TEAM_LEAD
         );
-        details.put("teamLeadCount", teamLeadCount);
 
-        return details;
+        return DepartmentDetailsResponse.builder()
+                .id(departmentId)
+                .name(department.getName())
+                .code(department.getCode())
+                .directorId(department.getDirector() != null ? department.getDirector().getId() : null)
+                .directorName(department.getDirector() != null ? department.getDirector().getFullName() : null)
+                .employeeCount(employeeCount)
+                .teamLeadCount(teamLeadCount)
+                .build();
     }
 
-    public Map<String, Object> getUserDepartment(Integer userId) {
+    public UserDepartmentResponse getUserDepartment(Integer userId) {
         Employee employee = employeeRepository.findById(userId)
                 .orElseThrow(() -> new RuntimeException("Employee not found"));
 
         Department department = employee.getDepartment();
 
-        Map<String, Object> deptInfo = new HashMap<>();
-        deptInfo.put("id", department.getId());
-        deptInfo.put("name", department.getName());
-        deptInfo.put("code", department.getCode());
-        deptInfo.put("directorName", department.getDirector() != null ?
-                department.getDirector().getFullName() : null);
-
-        return deptInfo;
+        return UserDepartmentResponse.builder()
+                .id(department.getId())
+                .name(department.getName())
+                .code(department.getCode())
+                .directorName(department.getDirector() != null ?
+                        department.getDirector().getFullName() : null)
+                .build();
     }
 }

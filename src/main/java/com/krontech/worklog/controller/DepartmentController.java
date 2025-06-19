@@ -1,5 +1,9 @@
 package com.krontech.worklog.controller;
 
+import com.krontech.worklog.dto.response.DepartmentDetailsResponse;
+import com.krontech.worklog.dto.response.DepartmentHierarchyResponse;
+import com.krontech.worklog.dto.response.DepartmentSummaryResponse;
+import com.krontech.worklog.dto.response.UserDepartmentResponse;
 import com.krontech.worklog.security.SecurityUtils;
 import com.krontech.worklog.service.DepartmentService;
 import lombok.RequiredArgsConstructor;
@@ -9,7 +13,6 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/departments")
@@ -25,7 +28,7 @@ public class DepartmentController {
      */
     @GetMapping
     @PreAuthorize("hasRole('DIRECTOR')")
-    public ResponseEntity<List<Map<String, Object>>> getAllDepartments() {
+    public ResponseEntity<List<DepartmentSummaryResponse>> getAllDepartments() {
         log.info("Getting all departments with stats");
         return ResponseEntity.ok(departmentService.getAllDepartmentsWithStats());
     }
@@ -35,7 +38,7 @@ public class DepartmentController {
      */
     @GetMapping("/{id}")
     @PreAuthorize("hasRole('DIRECTOR')")
-    public ResponseEntity<?> getDepartment(@PathVariable Integer id) {
+    public ResponseEntity<DepartmentDetailsResponse> getDepartment(@PathVariable Integer id) {
         log.info("Getting department: {}", id);
         return ResponseEntity.ok(departmentService.getDepartmentDetails(id));
     }
@@ -46,7 +49,7 @@ public class DepartmentController {
      */
     @GetMapping("/{id}/hierarchy")
     @PreAuthorize("hasRole('DIRECTOR')")
-    public ResponseEntity<Map<String, Object>> getDepartmentHierarchy(@PathVariable Integer id) {
+    public ResponseEntity<DepartmentHierarchyResponse> getDepartmentHierarchy(@PathVariable Integer id) {
         log.info("Getting department hierarchy for: {}", id);
         return ResponseEntity.ok(departmentService.getDepartmentHierarchy(id));
     }
@@ -56,7 +59,7 @@ public class DepartmentController {
      */
     @GetMapping("/my")
     @PreAuthorize("isAuthenticated()")
-    public ResponseEntity<?> getMyDepartment() {
+    public ResponseEntity<UserDepartmentResponse> getMyDepartment() {
         log.info("Getting current user's department");
         Integer currentUserId = SecurityUtils.getCurrentUserId();
         return ResponseEntity.ok(departmentService.getUserDepartment(currentUserId));

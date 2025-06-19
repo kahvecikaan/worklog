@@ -1,8 +1,10 @@
 package com.krontech.worklog.service;
 
+import com.krontech.worklog.dto.projection.*;
 import com.krontech.worklog.dto.request.DashboardFilterRequest;
 import com.krontech.worklog.dto.response.DashboardResponse;
 import com.krontech.worklog.dto.response.DashboardResponse.*;
+import com.krontech.worklog.dto.response.QuickStatsResponse;
 import com.krontech.worklog.entity.Employee;
 import com.krontech.worklog.entity.Role;
 import com.krontech.worklog.entity.Worklog;
@@ -17,10 +19,7 @@ import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalAdjusters;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -92,27 +91,26 @@ public class DashboardService {
 
         // Build period summary
         responseBuilder.periodSummary(PeriodSummary.builder()
-                .totalHours(totalHours)
-                .totalDays(totalHours / 8.0)
-                .daysWorked((int) daysWorked)
-                .averageHoursPerDay(daysWorked > 0 ? (double) totalHours / daysWorked : 0.0)
-                .period(getPeriodDescription(startDate, endDate))
-                .build());
+                        .totalHours(totalHours)
+                        .totalDays(totalHours / 8.0)
+                        .daysWorked((int) daysWorked)
+                        .averageHoursPerDay(daysWorked > 0 ? (double) totalHours / daysWorked : 0.0)
+                        .startDate(startDate)
+                        .endDate(endDate)
+                        .build());
 
         // Get worklog type breakdown
-        List<Object[]> typeBreakdown = worklogRepository.getHoursByTypeForEmployee(
+        List<WorklogTypeHoursProjection> typeBreakdown = worklogRepository.getHoursByTypeForEmployee(
                 employee.getId(), startDate, endDate
         );
 
         List<WorklogTypeBreakdown> breakdowns = new ArrayList<>();
-        for (Object[] row : typeBreakdown) {
-            String typeName = (String) row[0];
-            Long hours = (Long) row[1];
+        for (WorklogTypeHoursProjection projection : typeBreakdown) {
             breakdowns.add(WorklogTypeBreakdown.builder()
-                    .typeName(typeName)
-                    .hours(hours.intValue())
-                    .percentage(totalHours > 0 ? (hours * 100.0) / totalHours : 0.0)
-                    .build());
+                            .typeName(projection.getTypeName())
+                            .hours(projection.getHours().intValue())
+                            .percentage(totalHours > 0 ? (projection.getHours() * 100.0) / totalHours : 0.0)
+                            .build());
         }
         responseBuilder.worklogTypeBreakdown(breakdowns);
 
@@ -138,8 +136,8 @@ public class DashboardService {
         LocalDate startDate = filters.getStartDate();
         LocalDate endDate = filters.getEndDate();
 
-        // Get team members summary (now includes ALL active team members)
-        List<Object[]> teamSummaryData = worklogRepository.getTeamSummary(
+        // Get team members summary
+        List<TeamMemberProjection> teamSummaryData = worklogRepository.getTeamSummary(
                 teamLead.getId(), startDate, endDate
         );
 
@@ -150,34 +148,29 @@ public class DashboardService {
         // Calculate working days for utilization
         long workingDays = calculateWorkingDays(startDate, endDate);
 
-        for (Object[] row : teamSummaryData) {
-            Integer memberId = (Integer) row[0];
-            String firstName = (String) row[1];
-            String lastName = (String) row[2];
-            Long totalHours = (Long) row[3];
-            Long daysWorked = (Long) row[4];
-
-            Employee member = employeeRepository.findById(memberId).orElse(null);
+        for (TeamMemberProjection projection : teamSummaryData) {
+            // Direct, type-safe access to fields - no casting needed!
+            Employee member = employeeRepository.findById(projection.getId()).orElse(null);
             if (member == null) continue;
 
             // Track members who actually logged work
-            if (totalHours > 0) {
+            if (projection.getTotalHours() > 0) {
                 membersWithLogs++;
             }
 
             double utilizationRate = (workingDays > 0) ?
-                    (totalHours * 100.0) / (workingDays * 8) : 0.0;
+                    (projection.getTotalHours() * 100.0) / (workingDays * 8) : 0.0;
 
             teamMembers.add(TeamMemberSummary.builder()
-                    .id(memberId)
-                    .name(firstName + " " + lastName)
-                    .grade(member.getGrade().getTitle())
-                    .totalHours(totalHours.intValue())
-                    .daysWorked(daysWorked.intValue())
-                    .utilizationRate(utilizationRate)
-                    .build());
+                            .id(projection.getId())
+                            .name(projection.getFirstName() + " " + projection.getLastName())
+                            .grade(member.getGrade().getTitle())
+                            .totalHours(projection.getTotalHours().intValue())
+                            .daysWorked(projection.getDaysWorked().intValue())
+                            .utilizationRate(utilizationRate)
+                            .build());
 
-            totalTeamHours += totalHours.intValue();
+            totalTeamHours += projection.getTotalHours().intValue();
         }
 
         responseBuilder.teamMembers(teamMembers);
@@ -189,11 +182,11 @@ public class DashboardService {
                     (totalTeamHours * 100.0) / (teamMembers.size() * workingDays * 8) : 0.0;
 
             responseBuilder.teamStats(TeamStatistics.builder()
-                    .teamSize(teamMembers.size())
-                    .totalTeamHours(totalTeamHours)
-                    .averageHoursPerMember(avgHoursPerMember)
-                    .teamUtilizationRate(teamUtilization)
-                    .build());
+                            .teamSize(teamMembers.size())
+                            .totalTeamHours(totalTeamHours)
+                            .averageHoursPerMember(avgHoursPerMember)
+                            .teamUtilizationRate(teamUtilization)
+                            .build());
 
             log.info("Team lead dashboard - Team size: {}, Members with logs: {}, Total hours: {}, Utilization: {}%",
                     teamMembers.size(), membersWithLogs, totalTeamHours, teamUtilization);
@@ -226,6 +219,14 @@ public class DashboardService {
         double highestUtilization = 0;
         double lowestUtilization = 100;
 
+        // Use the new projection-based method for department team summary
+        List<DepartmentTeamSummaryProjection> teamSummaries =
+                worklogRepository.getDepartmentTeamSummary(departmentId, startDate, endDate);
+
+        // Create a map for quick lookup
+        Map<Integer, DepartmentTeamSummaryProjection> teamDataMap = teamSummaries.stream()
+                .collect(Collectors.toMap(DepartmentTeamSummaryProjection::getTeamLeadId, ts -> ts));
+
         for (Employee teamLead : teamLeads) {
             // Get team lead's own hours first
             Integer teamLeadHours = worklogRepository.getTotalHoursByEmployee(
@@ -233,22 +234,19 @@ public class DashboardService {
             );
             if (teamLeadHours == null) teamLeadHours = 0;
 
-            // Get team members' data using the improved query
-            List<Object[]> teamData = worklogRepository.getTeamSummary(
+            // Get team data from projection
+            DepartmentTeamSummaryProjection teamData = teamDataMap.get(teamLead.getId());
+
+            int teamSize = teamData != null ? teamData.getTeamSize().intValue() : 0;
+            int teamMembersHours = teamData != null ? teamData.getTotalHours().intValue() : 0;
+
+            // Calculate members with logs (need additional query or tracking)
+            List<TeamMemberProjection> teamMemberData = worklogRepository.getTeamSummary(
                     teamLead.getId(), startDate, endDate
             );
-
-            int teamSize = teamData.size();
-            int teamMembersHours = 0;
-            int teamMembersWithLogs = 0;
-
-            for (Object[] row : teamData) {
-                Long hours = (Long) row[3];
-                if (hours > 0) {
-                    teamMembersWithLogs++;
-                }
-                teamMembersHours += hours.intValue();
-            }
+            int teamMembersWithLogs = (int) teamMemberData.stream()
+                    .filter(m -> m.getTotalHours() > 0)
+                    .count();
 
             // Total team hours = team lead hours + team members hours
             int totalTeamHours = teamLeadHours + teamMembersHours;
@@ -263,7 +261,7 @@ public class DashboardService {
                     .teamSize(teamSize) // Just team members count
                     .teamTotalHours(totalTeamHours) // Includes team lead
                     .teamUtilizationRate(teamUtilization)
-                    .teamMembersWithLogs(teamMembersWithLogs) // New field
+                    .teamMembersWithLogs(teamMembersWithLogs)
                     .build();
 
             teamLeadSummaries.add(summary);
@@ -308,33 +306,30 @@ public class DashboardService {
         // Add team performance insights
         if (bestPerformingTeam != null && worstPerformingTeam != null) {
             responseBuilder.teamPerformanceInsights(TeamPerformanceInsights.builder()
-                    .bestPerformingTeamId(bestPerformingTeam.getId())
-                    .bestPerformingTeamName(bestPerformingTeam.getName())
-                    .bestPerformingTeamUtilization(bestPerformingTeam.getTeamUtilizationRate())
-                    .worstPerformingTeamId(worstPerformingTeam.getId())
-                    .worstPerformingTeamName(worstPerformingTeam.getName())
-                    .worstPerformingTeamUtilization(worstPerformingTeam.getTeamUtilizationRate())
-                    .utilizationGap(highestUtilization - lowestUtilization)
-                    .build());
+                            .bestPerformingTeamId(bestPerformingTeam.getId())
+                            .bestPerformingTeamName(bestPerformingTeam.getName())
+                            .bestPerformingTeamUtilization(bestPerformingTeam.getTeamUtilizationRate())
+                            .worstPerformingTeamId(worstPerformingTeam.getId())
+                            .worstPerformingTeamName(worstPerformingTeam.getName())
+                            .worstPerformingTeamUtilization(worstPerformingTeam.getTeamUtilizationRate())
+                            .utilizationGap(highestUtilization - lowestUtilization)
+                            .build());
         }
 
         // Get department-wide worklog type breakdown
-        List<Object[]> deptTypeBreakdown = worklogRepository.getDepartmentWorklogTypeSummary(
-                departmentId, startDate, endDate
-        );
+        List<WorklogTypeHoursProjection> deptTypeBreakdown =
+                worklogRepository.getDepartmentWorklogTypeSummary(departmentId, startDate, endDate);
 
         List<WorklogTypeBreakdown> deptBreakdowns = new ArrayList<>();
         int actualDeptTotal = 0;
 
-        for (Object[] row : deptTypeBreakdown) {
-            String typeName = (String) row[0];
-            Long hours = (Long) row[1];
-            actualDeptTotal += hours.intValue();
+        for (WorklogTypeHoursProjection projection : deptTypeBreakdown) {
+            actualDeptTotal += projection.getHours().intValue();
             deptBreakdowns.add(WorklogTypeBreakdown.builder()
-                    .typeName(typeName)
-                    .hours(hours.intValue())
-                    .percentage(0.0) // Will calculate after getting total
-                    .build());
+                            .typeName(projection.getTypeName())
+                            .hours(projection.getHours().intValue())
+                            .percentage(0.0) // Will calculate after getting total
+                            .build());
         }
 
         // Update percentages with actual total
@@ -344,7 +339,6 @@ public class DashboardService {
             }
         }
 
-        // Use the actual total from database
         departmentTotalHours = actualDeptTotal;
 
         // Only set department breakdown if we have data
@@ -352,7 +346,7 @@ public class DashboardService {
             responseBuilder.worklogTypeBreakdown(deptBreakdowns);
         }
 
-        // Calculate department statistics with enhanced metrics
+        // Calculate department statistics
         int totalEmployees = departmentEmployees.size() - 1; // Exclude director
         double deptUtilization = (workingDays > 0 && totalEmployees > 0) ?
                 (departmentTotalHours * 100.0) / (totalEmployees * workingDays * 8) : 0.0;
@@ -372,55 +366,19 @@ public class DashboardService {
 
         double logComplianceRate = (totalEmployees > 0) ?
                 (employeesWithLogs * 100.0 / totalEmployees) : 0.0;
+
         responseBuilder.departmentStats(DepartmentStatistics.builder()
-                .totalEmployees(totalEmployees)
-                .totalTeamLeads(teamLeads.size())
-                .departmentTotalHours(departmentTotalHours)
-                .departmentUtilizationRate(deptUtilization)
-                .employeesWithLogs(employeesWithLogs)
-                .logComplianceRate(logComplianceRate)
-                .build());
+                        .totalEmployees(totalEmployees)
+                        .totalTeamLeads(teamLeads.size())
+                        .departmentTotalHours(departmentTotalHours)
+                        .departmentUtilizationRate(deptUtilization)
+                        .employeesWithLogs(employeesWithLogs)
+                        .logComplianceRate(logComplianceRate)
+                        .build());
 
         log.info("Director dashboard - Department total hours: {}, Total employees: {}, Utilization: {}%, Compliance: {}%",
                 departmentTotalHours, totalEmployees, deptUtilization,
                 logComplianceRate);
-    }
-
-    // Helper methods
-    private long calculateWeekends(LocalDate start, LocalDate end) {
-        long weekends = 0;
-        LocalDate date = start;
-        while (!date.isAfter(end)) {
-            if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
-                weekends++;
-            }
-            date = date.plusDays(1);
-        }
-        return weekends;
-    }
-
-    private long calculateWorkingDays(LocalDate start, LocalDate end) {
-        long totalDays = ChronoUnit.DAYS.between(start, end) + 1;
-        return totalDays - calculateWeekends(start, end);
-    }
-
-    private String getPeriodDescription(LocalDate start, LocalDate end) {
-        LocalDate now = LocalDate.now();
-        LocalDate weekStart = now.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
-        LocalDate weekEnd = now.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY));
-
-        if (start.equals(weekStart) && end.equals(weekEnd)) {
-            return "This Week";
-        }
-
-        LocalDate monthStart = now.withDayOfMonth(1);
-        LocalDate monthEnd = now.withDayOfMonth(now.lengthOfMonth());
-
-        if (start.equals(monthStart) && end.equals(monthEnd)) {
-            return "This Month";
-        }
-
-        return start + " to " + end.toString();
     }
 
     public DashboardResponse getEmployeeDashboard(Integer currentUserId, Integer targetEmployeeId,
@@ -440,7 +398,7 @@ public class DashboardService {
         return getDashboard(targetEmployeeId, filters);
     }
 
-    public Map<String, Object> getQuickStats(Integer employeeId) {
+    public QuickStatsResponse getQuickStats(Integer employeeId) {
         Employee employee = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new RuntimeException("Employee not found"));
 
@@ -456,26 +414,26 @@ public class DashboardService {
         List<Worklog> todayLogs = worklogRepository.findByEmployeeIdAndWorkDate(employeeId, LocalDate.now());
         int todayHours = todayLogs.stream().mapToInt(Worklog::getHoursWorked).sum();
 
-        Map<String, Object> stats = new HashMap<>();
-        stats.put("todayHours", todayHours);
-        stats.put("weekHours", weekHours);
-        stats.put("remainingWeekHours", Math.max(0, 40 - weekHours));
-        stats.put("hasLoggedToday", !todayLogs.isEmpty());
+        QuickStatsResponse.QuickStatsResponseBuilder statsBuilder = QuickStatsResponse.builder()
+                .todayHours(todayHours)
+                .weekHours(weekHours)
+                .remainingWeekHours(Math.max(0, 40 - weekHours))
+                .hasLoggedToday(!todayLogs.isEmpty());
 
         // Add role-specific stats
         if (employee.getRole() == Role.TEAM_LEAD) {
             // Team lead sees their direct team members
             List<Employee> teamMembers = employeeRepository.findByTeamLeadIdAndIsActiveTrue(employeeId);
-            stats.put("teamSize", teamMembers.size());
 
             // Count how many have logged today
-            long loggedToday = 0;
+            int loggedToday = 0;
             for (Employee member : teamMembers) {
                 boolean hasLogged = worklogRepository.hasLoggedWorkForDate(member.getId(), LocalDate.now());
                 if (hasLogged) loggedToday++;
             }
-            stats.put("teamMembersLoggedToday", loggedToday);
 
+            statsBuilder.teamSize(teamMembers.size());
+            statsBuilder.teamMembersLoggedToday(loggedToday);
         } else if (employee.getRole() == Role.DIRECTOR) {
             // Director sees all department members (excluding self)
             List<Employee> departmentEmployees = employeeRepository.findByDepartmentIdAndIsActiveTrue(
@@ -484,23 +442,41 @@ public class DashboardService {
 
             // Remove the director from the count
             int teamSize = departmentEmployees.size() - 1;
-            stats.put("teamSize", teamSize);
+            statsBuilder.teamSize(teamSize);
 
             // Count how many have logged today (excluding director)
-            long loggedToday = 0;
+            int loggedToday = 0;
             for (Employee member : departmentEmployees) {
                 if (!member.getId().equals(employeeId)) {
                     boolean hasLogged = worklogRepository.hasLoggedWorkForDate(member.getId(), LocalDate.now());
                     if (hasLogged) loggedToday++;
                 }
             }
-            stats.put("teamMembersLoggedToday", loggedToday);
 
+            statsBuilder.teamSize(teamSize);
+            statsBuilder.teamMembersLoggedToday(loggedToday);
         }
 
-        log.info("Quick stats for {} ({})",
-                employee.getFullName(), employee.getRole());
+        log.info("Quick stats for {} ({})", employee.getFullName(), employee.getRole());
 
-        return stats;
+        return statsBuilder.build();
+    }
+
+    // Helper methods
+    private long calculateWeekends(LocalDate start, LocalDate end) {
+        long weekends = 0;
+        LocalDate date = start;
+        while (!date.isAfter(end)) {
+            if (date.getDayOfWeek() == DayOfWeek.SATURDAY || date.getDayOfWeek() == DayOfWeek.SUNDAY) {
+                weekends++;
+            }
+            date = date.plusDays(1);
+        }
+        return weekends;
+    }
+
+    private long calculateWorkingDays(LocalDate start, LocalDate end) {
+        long totalDays = ChronoUnit.DAYS.between(start, end) + 1;
+        return totalDays - calculateWeekends(start, end);
     }
 }

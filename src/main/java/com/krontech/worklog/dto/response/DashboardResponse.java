@@ -43,7 +43,8 @@ public class DashboardResponse {
         private Double totalDays;
         private Integer daysWorked;
         private Double averageHoursPerDay;
-        private String period; // "This Week", "This Month", etc.
+        private LocalDate startDate;
+        private LocalDate endDate;
     }
 
     @Data

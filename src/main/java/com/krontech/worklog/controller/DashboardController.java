@@ -2,6 +2,7 @@
 
     import com.krontech.worklog.dto.request.DashboardFilterRequest;
     import com.krontech.worklog.dto.response.DashboardResponse;
+    import com.krontech.worklog.dto.response.QuickStatsResponse;
     import com.krontech.worklog.security.SecurityUtils;
     import com.krontech.worklog.service.DashboardService;
     import lombok.RequiredArgsConstructor;
@@ -12,7 +13,6 @@
     import org.springframework.web.bind.annotation.*;
 
     import java.time.LocalDate;
-    import java.util.Map;
 
     @RestController
     @RequestMapping("/api/dashboard")
@@ -76,7 +76,7 @@
          */
         @GetMapping("/stats/quick")
         @PreAuthorize("isAuthenticated()")
-        public ResponseEntity<Map<String, Object>> getQuickStats() {
+        public ResponseEntity<QuickStatsResponse> getQuickStats() {
             log.info("Getting quick stats");
             Integer currentUserId = SecurityUtils.getCurrentUserId();
             return ResponseEntity.ok(dashboardService.getQuickStats(currentUserId));

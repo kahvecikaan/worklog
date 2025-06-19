@@ -1,11 +1,12 @@
 package com.krontech.worklog.dto.response;
 
 import com.krontech.worklog.entity.Employee;
-import jakarta.persistence.criteria.CriteriaBuilder;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
+import java.time.LocalDate;
 
 @Data
 @Builder
@@ -25,6 +26,8 @@ public class EmployeeResponse {
     private Integer departmentId;
     private String departmentName;
     private Boolean isActive;
+    private LocalDate startDate;
+    private LocalDate endDate;
 
     public static EmployeeResponse from(Employee employee) {
         return EmployeeResponse.builder()
@@ -41,6 +44,8 @@ public class EmployeeResponse {
                 .departmentId(employee.getDepartment().getId())
                 .departmentName(employee.getDepartment().getName())
                 .isActive(employee.getIsActive())
+                .startDate(employee.getStartDate())
+                .endDate(employee.getEndDate())
                 .build();
     }
 }
